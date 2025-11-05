@@ -195,6 +195,147 @@ IMPORTANTE:
         raise
 
 
+async def parse_multiple_reading_photos(images_base64: List[str]) -> Dict[str, Any]:
+    """
+    Extrae texto y preguntas de MÚLTIPLES fotos de un libro.
+    Combina todo en un solo ejercicio coherente.
+
+    Args:
+        images_base64: Lista de strings base64 (2-5 fotos)
+
+    Returns:
+        {"text": "...", "questions": [...]}
+
+    Raises:
+        ValueError: Si no se pudo extraer texto de ninguna foto
+        OpenAIError: Si hay error en la API de OpenAI
+    """
+    logger.info(f"📸 Procesando {len(images_base64)} fotos...")
+
+    all_texts = []
+    all_questions = []
+
+    # Procesar cada imagen con GPT-4 Vision
+    for i, image_base64 in enumerate(images_base64):
+        photo_num = i + 1
+        total_photos = len(images_base64)
+
+        prompt = f"""Analiza esta foto de un libro de texto de primaria (ESPAÑA).
+
+Esta es la FOTO {photo_num} de {total_photos} fotos totales.
+
+INSTRUCCIONES:
+- Si esta foto contiene TEXTO NARRATIVO/EXPOSITIVO para leer → extraelo completo
+- Si esta foto contiene PREGUNTAS de comprensión → extraelas todas
+- Si solo tiene parte del texto, está bien, las otras fotos tendrán el resto
+- Si es la última foto, probablemente tiene las preguntas
+
+FORMATO JSON:
+{{
+  "text": "texto extraído aquí (o null si no hay texto relevante)",
+  "questions": [
+    {{"q": "¿pregunta?", "type": "detail"}},
+    {{"q": "¿otra pregunta?", "type": "main_idea"}}
+  ]
+}}
+
+TIPOS de preguntas:
+- "detail": información explícita
+- "main_idea": idea principal
+- "vocabulary": significado de palabras
+- "inference": deducir algo no explícito
+- "comprehension": comprensión general
+
+Si NO hay preguntas en esta foto, deja array vacío: "questions": []
+Si NO hay texto relevante, pon: "text": null
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Eres un profesor experto en extraer texto e información de imágenes. Respondes en formato JSON."
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{image_base64}",
+                                    "detail": "high"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=1500,
+                temperature=0.1
+            )
+
+            content = response.choices[0].message.content.strip()
+
+            # Limpiar markdown si viene envuelto en ```json
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
+
+            result = json.loads(content)
+
+            logger.info(f"📸 Foto {photo_num}: text={'✓' if result.get('text') else '✗'}, questions={len(result.get('questions', []))}")
+
+            # Agregar texto si existe
+            if result.get("text") and result["text"].strip():
+                all_texts.append(result["text"].strip())
+
+            # Agregar preguntas si existen
+            if result.get("questions"):
+                all_questions.extend(result["questions"])
+
+        except json.JSONDecodeError as e:
+            logger.error(f"⚠️ Error parseando JSON de foto {photo_num}: {e}")
+            # Continuar con las demás fotos
+            continue
+        except OpenAIError as e:
+            logger.error(f"⚠️ Error de OpenAI procesando foto {photo_num}: {e}")
+            # Continuar con las demás fotos
+            continue
+        except Exception as e:
+            logger.error(f"⚠️ Error inesperado procesando foto {photo_num}: {e}")
+            # Continuar con las demás fotos
+            continue
+
+    # Combinar todos los textos
+    combined_text = "\n\n".join(all_texts).strip()
+
+    if not combined_text:
+        raise ValueError("No se pudo extraer texto de ninguna foto")
+
+    logger.info(f"✅ Texto combinado: {len(combined_text)} caracteres")
+    logger.info(f"✅ Preguntas encontradas: {len(all_questions)}")
+
+    # Si NO hay preguntas en las fotos, generarlas automáticamente
+    if not all_questions:
+        logger.info("🤖 No hay preguntas en las fotos, generando automáticamente...")
+        from logic.ai_reading.question_generator import generate_questions_with_gpt4
+        all_questions = await generate_questions_with_gpt4(combined_text, "3")
+    else:
+        # Hay preguntas pero sin respuestas → generarlas
+        logger.info("🤖 Generando respuestas para las preguntas encontradas...")
+        from logic.ai_reading.answer_generator import generate_answers_for_questions
+        all_questions = await generate_answers_for_questions(combined_text, all_questions)
+
+    return {
+        "text": combined_text,
+        "questions": all_questions
+    }
+
+
 async def validate_extracted_text(text: str) -> bool:
     """
     Valida que el texto extraído sea adecuado para comprensión lectora.
