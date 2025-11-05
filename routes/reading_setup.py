@@ -323,6 +323,96 @@ async def reading_from_photo(
 
 
 # ═══════════════════════════════════════════════════════════════
+# ENDPOINT 4: EJERCICIO DESDE MÚLTIPLES FOTOS
+# ═══════════════════════════════════════════════════════════════
+
+class MultiplePhotosRequest(BaseModel):
+    """Request para procesar múltiples fotos de ejercicios de lectura"""
+    images: List[str] = Field(..., description="Array de imágenes en base64 (2-5 fotos)")
+
+
+@router.post("/from-photos", response_model=ReadingExerciseResponse)
+async def process_multiple_reading_photos(req: MultiplePhotosRequest):
+    """
+    Procesa múltiples fotos de un ejercicio de lectura.
+    Las fotos pueden contener: texto + preguntas, o solo texto (genera preguntas), o todo separado.
+
+    Args:
+        req: Request con array de imágenes en base64
+
+    Returns:
+        Ejercicio de lectura completo con ID, texto y preguntas
+    """
+    try:
+        # Validar cantidad de imágenes
+        if not req.images or len(req.images) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Debes subir al menos una foto"
+            )
+
+        if len(req.images) > 5:
+            raise HTTPException(
+                status_code=400,
+                detail="Máximo 5 fotos por ejercicio"
+            )
+
+        logger.info(f"📸 Procesando {len(req.images)} fotos...")
+
+        # Importar función de procesamiento múltiple
+        from logic.ai_reading.photo_parser import parse_multiple_reading_photos
+
+        # Procesar todas las fotos
+        result = await parse_multiple_reading_photos(req.images)
+
+        if not result["text"]:
+            raise HTTPException(
+                status_code=400,
+                detail="No se pudo extraer texto legible de las fotos"
+            )
+
+        if not result["questions"]:
+            raise HTTPException(
+                status_code=400,
+                detail="No se pudieron generar preguntas para este texto"
+            )
+
+        # Crear ejercicio en formato reading_engine
+        exercise = _create_exercise(result["text"], result["questions"])
+
+        # Generar ID único
+        exercise_id = str(uuid.uuid4())
+
+        # Guardar en DB
+        db.save_reading_exercise(exercise_id, exercise)
+
+        word_count = len(result["text"].split())
+        questions_count = len(result["questions"])
+
+        logger.info(f"✅ Ejercicio creado: {word_count} palabras, {questions_count} preguntas")
+
+        return ReadingExerciseResponse(
+            exercise_id=exercise_id,
+            exercise=exercise,
+            message=f"✅ Ejercicio creado desde {len(req.images)} fotos: {word_count} palabras, {questions_count} preguntas"
+        )
+
+    except ValueError as ve:
+        logger.error(f"❌ Error de validación: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error inesperado: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al procesar las fotos: {str(e)}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
 # ENDPOINTS INFORMATIVOS
 # ═══════════════════════════════════════════════════════════════
 
