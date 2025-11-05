@@ -21,5 +21,21 @@
       "estadistica": "statistics_engine",
       "problemas": "problem_solving_engine"
     }
+  },
+  "lengua": {
+    "palabras_clave": [
+      "leer", "lectura", "texto", "comprensión", "comprender",
+      "idea principal", "resumen", "personaje", "personajes",
+      "vocabulario", "significado", "sinónimo", "antónimo",
+      "párrafo", "frase", "oración", "cuento", "historia",
+      "autor", "narrador", "describir", "explicar"
+    ],
+    "engines": {
+      "lectura": "reading_engine",
+      "comprension": "reading_engine",
+      "gramatica": "grammar_engine",
+      "ortografia": "spelling_engine",
+      "vocabulario": "vocabulary_engine"
+    }
   }
 }
