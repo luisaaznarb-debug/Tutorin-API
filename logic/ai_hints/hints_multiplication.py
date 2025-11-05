@@ -1,53 +1,39 @@
 # -*- coding: utf-8 -*-
 """
 hints_multiplication.py
-Pistas progresivas para multiplicación según nivel de error.
-Compatible con multiplication_engine.py
+Pistas progresivas pedagógicas para multiplicación DÍGITO POR DÍGITO.
+Incluye detección especial para llevada final.
 """
-from .hints_utils import _extract_pre_block, _question, _first_int_on_line
 import re
-from typing import Optional, List
+from typing import Optional
 
 # ────────── Utilidades ──────────
-def _parse_mult_from_context(ctx: str):
-    """Extrae los dos números de una multiplicación del contexto."""
-    lines = _extract_pre_block(ctx).splitlines()
-    if len(lines) < 2:
-        return None
-    a = _first_int_on_line(lines[0])
-    b = _first_int_on_line(lines[1])
-    if a is None or b is None:
-        return None
-    return (a, b)
+def _extract_multiplication_from_context(context: str) -> Optional[tuple]:
+    """
+    Extrae la multiplicación que el motor está pidiendo.
+    Busca patrones como: "Multiplica 5 × 3"
+    Retorna: (digit_a, digit_b) o None
+    """
+    # Buscar patrón: "Multiplica X × Y"
+    match = re.search(r'Multiplica\s+<b>(\d+)\s*×\s*(\d+)</b>', context)
+    if match:
+        digit_a = int(match.group(1))
+        digit_b = int(match.group(2))
+        return (digit_a, digit_b)
+    
+    return None
 
-def _explain_long_mult_by_digit(a: int, digit: int) -> str:
-    """
-    Explica paso a paso la multiplicación de 'a' por 'digit',
-    mostrando las llevadas en cada posición.
-    """
-    s = str(a)
-    carry = 0
-    steps: List[str] = []
-    for ch in reversed(s):
-        d = int(ch)
-        subtotal = d * digit + carry
-        write = subtotal % 10
-        prev = carry
-        carry = subtotal // 10
-        if prev > 0:
-            steps.append(
-                f"{d}×{digit} + {prev} = {subtotal} → escribe <b>{write}</b>" + 
-                (f" y llevas <b>{carry}</b>" if carry else "")
-            )
-        else:
-            steps.append(
-                f"{d}×{digit} = {d*digit} → escribe <b>{write}</b>" + 
-                (f" y llevas <b>{carry}</b>" if carry else "")
-            )
-    steps_text = "; luego ".join(steps)
-    if carry:
-        steps_text += f"; al final, escribe <b>{carry}</b> a la izquierda"
-    return steps_text + "."
+def _has_carry_mention(context: str) -> bool:
+    """Detecta si se menciona que hay llevada."""
+    return "llevada anterior" in context or "no olvides la llevada" in context
+
+def _extract_position_from_context(context: str) -> str:
+    """Extrae la posición actual."""
+    positions = ["unidades de millar", "decenas de millar", "centenas", "decenas", "unidades"]
+    for pos in positions:
+        if f"las <b>{pos}</b>" in context:
+            return pos
+    return "esta columna"
 
 def _asks_where_to_start(txt: str) -> bool:
     """Detecta si el alumno pregunta por dónde empezar."""
@@ -59,107 +45,165 @@ def _asks_where_to_start(txt: str) -> bool:
         "qué número empie", "que numero empie",
         "por dónde empie", "por donde empie",
         "dónde empie", "donde empie",
-        "empiezo por"
+        "empiezo por", "cómo empiezo", "como empiezo"
     ])
 
-# ────────── Pistas progresivas ──────────
+# ────────── Pistas progresivas pedagógicas ──────────
 def _mult_parcial_hint(context: str, err: int, cycle: str) -> str:
     """
-    Pistas para calcular líneas parciales de multiplicación.
-    Niveles:
-    - 1: pista básica
-    - 2: recordatorio personalizado
-    - 3: explicación con llevadas
-    - 4+: casi-solución
+    Pistas pedagógicas con andamiaje progresivo.
+    Detecta si es llevada final y da pistas específicas.
     """
-    # ¿El alumno pregunta "por qué número empiezo"?
+    # Detectar si pregunta por dónde empezar
     if _asks_where_to_start(context):
-        parsed = _parse_mult_from_context(context)
-        if parsed:
-            a, b = parsed
-            return (
-                f"Empieza por la <b>cifra de las unidades</b> del número de abajo "
-                f"porque es la que vale menos. En <b>{a} × {b}</b>, esa cifra es "
-                f"<b>{str(b)[-1]}</b>. Después pasarás a decenas, centenas…"
-            )
         return (
-            "Empieza por la <b>cifra de las unidades</b> del número de abajo. "
-            "Luego pasarás a decenas y centenas, añadiendo ceros por la posición."
+            "👉 Siempre empezamos por la <b>cifra de las unidades</b> del número de abajo "
+            "(la que está más a la derecha). Después seguimos con decenas, centenas..."
         )
-    parsed = _parse_mult_from_context(context)
-    if not parsed:
-        return "👉 Multiplica el número de arriba por cada cifra del número de abajo."
-    a, b = parsed
-    # Detectar la cifra con la que se multiplica
-    m_digit = re.search(r"que es\s*(\d+)", context, flags=re.IGNORECASE)
-    digit = int(m_digit.group(1)) if m_digit else int(str(b)[-1])
-    # Detectar desplazamiento (decenas/centenas)
-    shift = 0
-    m_line = re.search(r"línea parcial #(\d+)", context)
-    if m_line:
-        n_line = int(m_line.group(1))
-        shift = max(0, n_line - 1)
-    # Nivel 1: pista básica
+    
+    # Detectar si es el caso de llevada final
+    is_final_carry = "Solo queda anotar la llevada" in context or "Escribe la llevada que te quedó" in context
+    
+    if is_final_carry:
+        # Pistas específicas para llevada final
+        if err == 1:
+            return "💡 Solo escribe la <b>llevada</b> que te quedó del paso anterior (un solo dígito)."
+        if err == 2:
+            return "🔢 Mira el último cálculo que hiciste. Si el resultado tenía dos cifras (por ejemplo, 15), la llevada es la cifra de las <b>decenas</b> (el 1)."
+        if err == 3:
+            return "✏️ Cuando el último paso dio un resultado de dos cifras, la cifra de las decenas es la que debes escribir ahora. Por ejemplo, si fue 15, escribe <b>1</b>."
+        if err >= 4:
+            return "📝 Escribe solo el <b>1</b> (la llevada del paso anterior)."
+    
+    # Extraer la multiplicación del contexto (caso normal)
+    mult = _extract_multiplication_from_context(context)
+    if not mult:
+        return "💡 Piensa en las tablas de multiplicar. Escribe solo la cifra de las unidades."
+    
+    digit_a, digit_b = mult
+    has_carry = _has_carry_mention(context)
+    position = _extract_position_from_context(context)
+    
+    # Calcular resultado
+    product = digit_a * digit_b
+    write_digit = product % 10
+    carry_next = product // 10
+    
+    # Nivel 1: Referencia a las tablas (sin dar resultado)
     if err == 1:
-        return (
-            f"👉 Multiplica <b>{a}</b> por la cifra de las <b>unidades</b> del número de abajo "
-            f"(<b>{str(b)[-1]}</b>) y escribe esa <b>línea parcial</b>. "
-            + _question("¿Qué resultado obtienes?")
-        )
-    # Nivel 2: recordatorio personalizado
-    if err == 2:
-        base = f"Multiplica <b>{a}</b> por <b>{digit}</b> y escribe esa <b>línea parcial</b>."
-        if shift > 0:
-            ceros = "cero" if shift == 1 else "ceros"
-            base += f" Como es la línea #{shift+1}, añade <b>{shift}</b> {ceros} al final (desplazamiento)."
-        else:
-            base += " En la primera línea no hace falta desplazar."
-        return base + " " + _question("¿Cuál es el resultado?")
-    # Nivel 3: explicación con llevadas
-    if err == 3:
-        detail = _explain_long_mult_by_digit(a, digit)
-        tail = ""
-        if shift > 0:
-            ceros = "cero" if shift == 1 else "ceros"
-            tail = f" Después añade <b>{shift}</b> {ceros} al final por la posición."
-        return "💡 " + detail + tail
-    # Nivel 4+: casi-solución
-    if err >= 4:
-        detail = _explain_long_mult_by_digit(a, digit)
-        parcial = a * digit
-        if shift > 0:
-            ceros = "cero" if shift == 1 else "ceros"
+        if not has_carry:
             return (
-                f"La línea parcial es <b>{parcial}</b> (resultado de <b>{a}×{digit}</b>). {detail} "
-                f"Luego añade <b>{shift}</b> {ceros} por la posición y escribe: <b>{parcial}{'0'*shift}</b>."
+                f"💡 Piensa en la <b>tabla del {digit_b}</b>. "
+                f"Escribe la cifra de las <b>unidades</b> y recuerda lo que te llevas."
             )
-        return f"La línea parcial es <b>{parcial}</b> (resultado de <b>{a}×{digit}</b>). {detail}"
-    return "Escribe la línea parcial multiplicando por la cifra de <b>unidades</b> del número de abajo."
+        else:
+            return (
+                f"💡 Primero usa la <b>tabla del {digit_b}</b>, luego suma lo que te llevabas del paso anterior. "
+                f"Escribe solo la cifra de las unidades."
+            )
+    
+    # Nivel 2: Muestra la tabla (deja que busque)
+    if err == 2:
+        # Construir tabla hasta el número necesario
+        table_items = [f"{digit_b}×{i}={digit_b*i}" for i in range(1, min(11, digit_a + 2))]
+        table_str = ", ".join(table_items)
+        
+        if not has_carry:
+            return (
+                f"📊 Tabla del {digit_b}: {table_str}...<br/>"
+                f"Busca <b>{digit_a}×{digit_b}</b> y anota la cifra de las <b>unidades</b>. "
+                f"Si el resultado tiene dos cifras, te llevas la de las decenas."
+            )
+        else:
+            return (
+                f"📊 Tabla del {digit_b}: {table_str}...<br/>"
+                f"Encuentra <b>{digit_a}×{digit_b}</b>, suma la llevada anterior, "
+                f"y escribe solo la cifra de las unidades."
+            )
+    
+    # Nivel 3: Da el cálculo pero hace pensar en unidades/llevadas
+    if err == 3:
+        if not has_carry:
+            msg = f"🧮 <b>{digit_a} × {digit_b} = {product}</b>. "
+            if product >= 10:
+                msg += f"Como tiene dos cifras, escribes <b>{write_digit}</b> (unidades) y te llevas <b>{carry_next}</b> (decenas)."
+            else:
+                msg += f"Escribes <b>{write_digit}</b>."
+            return msg
+        else:
+            # Con llevada anterior - intentar inferir
+            for possible_carry in [1, 2, 3, 4]:
+                total = product + possible_carry
+                # Buscamos una llevada que tenga sentido pedagógicamente
+                if 10 <= total <= 30:  # Rango razonable
+                    msg = f"🧮 Primero: <b>{digit_a} × {digit_b} = {product}</b>. "
+                    msg += f"Luego sumas la llevada anterior (que seguramente es <b>{possible_carry}</b>): {product} + {possible_carry} = {total}. "
+                    msg += f"Escribes <b>{total % 10}</b> (unidades)"
+                    if total // 10 > 0:
+                        msg += f" y te llevas <b>{total // 10}</b> (decenas)."
+                    else:
+                        msg += "."
+                    return msg
+            
+            # Fallback genérico si no encontramos llevada razonable
+            msg = f"🧮 Primero: <b>{digit_a} × {digit_b} = {product}</b>. "
+            msg += f"Luego suma la llevada del paso anterior. Escribe solo la cifra de las unidades del total."
+            return msg
+    
+    # Nivel 4: Solución completa
+    if err >= 4:
+        if not has_carry:
+            msg = f"✏️ <b>{digit_a} × {digit_b} = {product}</b>. "
+            if carry_next > 0:
+                msg += f"Escribes <b>{write_digit}</b> en {position} y te llevas <b>{carry_next}</b>."
+            else:
+                msg += f"Escribes <b>{write_digit}</b> en {position}."
+            return msg
+        else:
+            # Con llevada - intentar inferir la correcta
+            for possible_carry in [1, 2, 3, 4]:
+                total = product + possible_carry
+                if 10 <= total <= 30:
+                    msg = f"✏️ <b>{digit_a} × {digit_b} = {product}</b>, "
+                    msg += f"más la llevada ({possible_carry}): {product} + {possible_carry} = {total}. "
+                    msg += f"Escribes <b>{total % 10}</b>"
+                    if total // 10 > 0:
+                        msg += f" y te llevas <b>{total // 10}</b>."
+                    else:
+                        msg += "."
+                    return msg
+            
+            # Fallback
+            return (
+                f"✏️ <b>{digit_a} × {digit_b} = {product}</b>. "
+                f"Suma la llevada anterior, escribe el dígito de las unidades del total."
+            )
+    
+    return "💡 Usa las tablas de multiplicar. Escribe solo la cifra de las unidades."
+
 
 def _mult_suma_hint(context: str, err: int, cycle: str) -> str:
     """Pistas para sumar las líneas parciales."""
     if err == 1:
         return (
-            "👉 Ahora suma todas las líneas parciales que has calculado. "
-            "Recuerda alinearlas por la <b>derecha</b> y sumar columna por columna. "
-            + _question("¿Qué total obtienes?")
+            "👉 Suma todas las líneas parciales columna por columna, <b>de derecha a izquierda</b>. "
+            "Empieza por las unidades. ¿Qué total obtienes?"
         )
     if err == 2:
         return (
-            "🧮 Alinea las líneas parciales por la <b>derecha</b> y suma en vertical. "
-            "Ten cuidado con las llevadas cuando la suma de una columna pase de 9. "
-            + _question("¿Cuál es el resultado final?")
+            "🧮 Suma en vertical. Ten cuidado con las <b>llevadas</b> "
+            "(cuando la suma de una columna pasa de 9). ¿Cuál es el resultado?"
         )
     if err == 3:
         return (
-            "💡 Haz una <b>estimación</b> para comprobar: redondea ambos números y multiplica mentalmente. "
-            "Si tu resultado está muy lejos, revisa la suma de las líneas parciales. "
-            + _question("¿Tiene sentido tu resultado?")
+            "💡 Haz una <b>estimación rápida</b>: redondea los números y multiplica mentalmente. "
+            "Si tu resultado está muy lejos, revisa la suma columna por columna."
         )
     return (
-        "✅ Vuelve a sumar las líneas parciales de abajo arriba, columna a columna. "
-        "Comprueba bien las llevadas. Si no cuadra, revisa cada línea parcial."
+        "✅ Repasa la suma de cada columna de derecha a izquierda. "
+        "Comprueba bien las llevadas. Si no cuadra, revisa las líneas parciales."
     )
+
 
 # ────────── Integración con OpenAI ──────────
 try:
@@ -172,15 +216,14 @@ except Exception:
     _USE_AI = False
 
 PROMPT = (
-    "Eres Tutorín (profesor de Primaria, LOMLOE). Da pistas concisas (1–2 frases), "
-    "amables y concretas para el PASO indicado. No cambies de paso. "
-    "Si el alumno pregunta '¿por qué número empiezo?', aclara que se empieza por UNIDADES del número de abajo. "
+    "Eres Tutorín (profesor de Primaria, LOMLOE). Da pistas pedagógicas y progresivas (1–2 frases cortas), "
+    "amables y motivadoras. No des la respuesta directa a menos que sea el error 4+. "
     "Paso: {step} | Contexto: {context} | Respuesta: {answer} | Errores: {err}"
 )
 
 def _ai_hint(step: str, context: str, answer: str, err: int) -> Optional[str]:
-    """Genera pista usando OpenAI si está disponible y err >= 2."""
-    if not _USE_AI or not _client or err < 2:
+    """Genera pista usando OpenAI si está disponible y err >= 3."""
+    if not _USE_AI or not _client or err < 3:
         return None
     try:
         res = _client.chat.completions.create(
@@ -197,10 +240,11 @@ def _ai_hint(step: str, context: str, answer: str, err: int) -> Optional[str]:
     except Exception:
         return None
 
-# ────────── Función principal (API pública) ──────────
+
+# ────────── Función principal ──────────
 def get_hint(hint_type: str, errors: int = 0, context: str = "", answer: str = "") -> str:
     """
-    Genera pista para multiplicación según hint_type y nivel de error.
+    Genera pista pedagógica según hint_type y nivel de error.
     Args:
         hint_type: 'mult_parcial', 'mult_suma', 'mult_resultado'
         errors: nivel de error (0-4+)
@@ -208,14 +252,16 @@ def get_hint(hint_type: str, errors: int = 0, context: str = "", answer: str = "
         answer: respuesta del alumno
     """
     ec = max(1, min(int(errors or 1), 4))
-    # Intentar con IA si err >= 2
+    
+    # Intentar con IA si err >= 3
     ai = _ai_hint(hint_type, context, answer, ec)
     if ai:
         return ai
+    
     # Fallback a pistas locales
     if hint_type == "mult_parcial":
         return _mult_parcial_hint(context, ec, "c2")
     elif hint_type in ("mult_suma", "mult_total", "mult_resultado"):
         return _mult_suma_hint(context, ec, "c2")
     else:
-        return "💡 Piensa paso a paso: multiplica por cada cifra del número de abajo y luego suma las líneas parciales."
+        return "💡 Piensa paso a paso usando las tablas de multiplicar."

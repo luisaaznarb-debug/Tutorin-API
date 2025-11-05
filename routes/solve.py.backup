@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 routes/solve.py
-Endpoint principal de Tutorín - VERSIÓN CORREGIDA
-✅ FIX: Ahora usa hint_types específicos del motor en TODOS los casos
+Endpoint principal de Tutorín - ✅ CORREGIDO: Normaliza decimales correctamente
 """
 from typing import Optional
 from fastapi import APIRouter
@@ -24,23 +23,41 @@ class SolveRequest(BaseModel):
     cycle: Optional[str] = "c2"
 
 def _canon(s: str) -> str:
-    """Normaliza texto para comparación"""
-    return str(s or "").replace(" ", "").replace(",", ".").lower()
+    """
+    Normaliza texto para comparación.
+    ✅ MEJORADO: Elimina ceros finales de números decimales
+    
+    Ejemplos:
+    - "0.04690" → "0.0469"
+    - "3.50" → "3.5"
+    - "23.00" → "23"
+    - "abc" → "abc" (sin cambios si no es número)
+    """
+    # Normalización básica
+    s = str(s or "").strip().replace(" ", "").replace(",", ".").lower()
+    
+    # Intentar normalizar como número (eliminar ceros finales)
+    try:
+        # Si puede convertirse a float, normalizarlo
+        num = float(s)
+        
+        # Convertir de vuelta a string sin ceros innecesarios
+        # Usar :g para formato automático sin ceros finales
+        s = f"{num:g}"
+        
+    except (ValueError, TypeError):
+        # Si no es un número válido, dejar como está
+        pass
+    
+    return s
 
 @router.post("/")
 def solve(req: SolveRequest):
     """Orquestador principal: gestiona paso actual, errores y motores."""
-    
-    # ===== LOGS DE DIAGNÓSTICO =====
-    print("=" * 60)
-    print(f"[PETICIÓN] exercise_id={req.exercise_id[:16] if req.exercise_id else 'None'}... | question={req.question[:20]}...")
-    print(f"[PETICIÓN] last_answer='{req.last_answer}' | req.step=None")
-    
     exercise_id = req.exercise_id or str(uuid.uuid4())
     
     # Leer progreso actual
     step_now, error_count, prev_ctx = get_progress(exercise_id)
-    print(f"[BD_ANTES] step={step_now} | errors={error_count}")
     
     # Detectar tema y motor
     nlu = analyze_prompt(req.question or "")
@@ -49,45 +66,44 @@ def solve(req: SolveRequest):
     
     # ---------------------------------------------------
     # 1️⃣ CASO "NO SÉ" → PISTA
+    # ✅ CORREGIDO: Primero llamamos al motor para obtener hint_type correcto
     # ---------------------------------------------------
     if is_unknown_answer(req.last_answer or ""):
         error_count = min(9, error_count + 1)
         
-        # ✅ CORREGIDO: Llamar al motor primero para obtener hint_type específico
-        print(f"[PISTA] Usuario pidió ayuda. Llamando motor con step={step_now}")
+        # 🔑 CLAVE: Llamar al motor para obtener el hint_type y contexto correctos
         det = run_engine_for(
             engine,
             prompt=req.question,
             step=step_now,
-            answer=req.last_answer or "",
+            answer="",  # Sin respuesta, solo queremos el contexto
             errors=error_count,
         )
         
-        if det:
-            hint_type = det.get("hint_type", "general_error")
-            message = det.get("message", "")
-            print(f"[PISTA] Motor retornó hint_type={hint_type}")
+        if det and det.get("hint_type"):
+            # Usar el hint_type real del motor
+            hint_type = det.get("hint_type", "general")
+            message = det.get("message", req.question)
             
-            # Generar pista usando el hint_type del motor
+            # Generar pista con el hint_type correcto
             ai_hint = generate_hint_with_ai(
                 topic,
-                hint_type,  # ← ✅ USA hint_type ESPECÍFICO del motor
-                message,
+                hint_type,  # ✅ hint_type correcto (ej: "decimal_multiplicar_sin_coma")
+                message,    # ✅ contexto completo con HTML
                 answer=req.last_answer or "",
                 error_count=error_count,
                 cycle=req.cycle,
             )
-            msg = ai_hint or "🧠 Pista: piensa paso a paso y revisa los números."
         else:
-            print("[ERROR] Motor no devolvió datos al pedir pista")
-            msg = "🧠 Pista: piensa paso a paso y revisa los números."
+            # Fallback si el motor no devuelve hint_type
+            ai_hint = "💡 Pista: piensa paso a paso. Revisa el número y vuelve a intentarlo."
         
+        msg = ai_hint or "🧠 Pista: piensa paso a paso y revisa los números."
         new_ctx = (prev_ctx + "\n" + msg).strip()
         upsert_progress(exercise_id, step_now, error_count, new_ctx, user_id=req.user_id)
         save_history(
             req.user_id, exercise_id, req.question, req.last_answer, msg, step_now, error_count
         )
-        print(f"[GUARDANDO] step={step_now} | errors={error_count} (pista)")
         return {
             "exercise_id": exercise_id,
             "status": "hint",
@@ -100,9 +116,8 @@ def solve(req: SolveRequest):
         }
 
     # ---------------------------------------------------
-    # 2️⃣ LLAMAR AL MOTOR
+    # 2️⃣ LLAMAR AL MOTOR CON EL PASO ACTUAL
     # ---------------------------------------------------
-    print(f"[MOTOR] Llamando {engine} con step={step_now}")
     det = run_engine_for(
         engine,
         prompt=req.question,
@@ -110,9 +125,7 @@ def solve(req: SolveRequest):
         answer=req.last_answer or "",
         errors=error_count,
     )
-    
     if not det:
-        print("[ERROR] Motor no devolvió datos")
         return {
             "exercise_id": exercise_id,
             "status": "error",
@@ -125,8 +138,6 @@ def solve(req: SolveRequest):
     status = det.get("status", "ask")
     next_step = int(det.get("next_step", step_now))
     hint_type = det.get("hint_type", "general_error")
-    
-    print(f"[MOTOR] Retornó: status={status} | expected={expected} | next_step={next_step}")
 
     # ---------------------------------------------------
     # 3️⃣ CASOS DE RESPUESTA
@@ -139,7 +150,6 @@ def solve(req: SolveRequest):
         save_history(
             req.user_id, exercise_id, req.question, req.last_answer, message, step_now, error_count
         )
-        print(f"[GUARDANDO] step={step_now} | errors={error_count} (primera vez sin respuesta)")
         return {
             "exercise_id": exercise_id,
             "status": status,
@@ -151,14 +161,14 @@ def solve(req: SolveRequest):
             "nlu": nlu,
         }
 
-    # 3b. HAY respuesta del usuario pero NO HAY expected → ejercicio sin validación
+    # 3b. HAY respuesta del usuario → verificar
     if not expected:
+        # Si el motor no espera una respuesta específica, avanzamos directamente
         new_ctx = (prev_ctx + "\n" + message).strip()
         upsert_progress(exercise_id, next_step, 0, new_ctx, user_id=req.user_id)
         save_history(
             req.user_id, exercise_id, req.question, req.last_answer, message, next_step, 0
         )
-        print(f"[GUARDANDO] step={next_step} | errors=0 (sin validación)")
         return {
             "exercise_id": exercise_id,
             "status": status,
@@ -171,15 +181,13 @@ def solve(req: SolveRequest):
         }
 
     # 3c. Respuesta INCORRECTA → incrementar errores, mantener paso
-    print(f"[COMPARACIÓN] user=[{_canon(req.last_answer)}] vs expected=[{_canon(expected)}]")
-    
     if _canon(req.last_answer) != _canon(expected):
-        print("[DEBUG] ❌ Comparación FALLÓ")
         error_count = min(9, error_count + 1)
+        # Generar pista con el hint_type correcto del motor
         ai_hint = generate_hint_with_ai(
             topic,
-            hint_type,
-            message,
+            hint_type,  # ✅ hint_type correcto
+            message,    # ✅ contexto completo con HTML
             answer=req.last_answer or "",
             error_count=error_count,
             cycle=req.cycle,
@@ -190,7 +198,6 @@ def solve(req: SolveRequest):
         save_history(
             req.user_id, exercise_id, req.question, req.last_answer, feedback, step_now, error_count
         )
-        print(f"[GUARDANDO] step={step_now} | errors={error_count} (respuesta incorrecta)")
         return {
             "exercise_id": exercise_id,
             "status": "feedback",
@@ -202,69 +209,56 @@ def solve(req: SolveRequest):
             "nlu": nlu,
         }
 
-    # 3d. Respuesta CORRECTA → avanzar y mostrar siguiente paso
-    print("[DEBUG] ✅ Comparación EXITOSA")
-    print(f"[DEBUG] Obteniendo siguiente paso: next_step={next_step}")
+    # ---------------------------------------------------
+    # 3d. Respuesta CORRECTA → avanzar al siguiente paso
+    # 🔑 SOLUCIÓN: Llamar al motor de nuevo con el next_step
+    # ---------------------------------------------------
     
-    success_msg = "✅ ¡Correcto! 👍"
-    
-    # Llamar al motor para obtener el SIGUIENTE PASO
-    print(f"[DEBUG] Llamando motor con step={next_step} para obtener siguiente pregunta")
-    next_det = run_engine_for(
-        engine,
-        prompt=req.question,
-        step=next_step,
-        answer="",
-        errors=0,
+    # ✅ PASO 1: Guardar el progreso del paso actual
+    new_ctx = (prev_ctx + "\n" + message).strip()
+    upsert_progress(exercise_id, next_step, 0, new_ctx, user_id=req.user_id)
+    save_history(
+        req.user_id, exercise_id, req.question, req.last_answer, message, next_step, 0
     )
     
-    if next_det:
-        print(f"[DEBUG] Motor devolvió siguiente paso: status={next_det.get('status')}")
+    # ✅ PASO 2: Llamar al motor con el SIGUIENTE PASO para obtener la nueva pregunta
+    det_next = run_engine_for(
+        engine,
+        prompt=req.question,
+        step=next_step,  # 🔑 Llamamos con el NUEVO step
+        answer="",       # Sin respuesta, queremos la pregunta del siguiente paso
+        errors=0,        # Reiniciamos errores
+    )
+    
+    if det_next:
+        # Usar el mensaje del siguiente paso
+        next_message = det_next.get("message", message)
+        next_expected = det_next.get("expected_answer")
+        next_status = det_next.get("status", status)
         
-        next_message = next_det.get("message", "")
-        next_expected = next_det.get("expected_answer")
-        next_status = next_det.get("status", "ask")
-        combined_message = f"{success_msg}\n\n{next_message}"
-        new_ctx = (prev_ctx + "\n" + combined_message).strip()
-        
-        upsert_progress(exercise_id, next_step, 0, new_ctx, user_id=req.user_id)
-        save_history(
-            req.user_id, exercise_id, req.question, req.last_answer, combined_message, next_step, 0
-        )
-        
-        print(f"[GUARDANDO] step={next_step} | errors=0 (respuesta correcta, MOSTRANDO SIGUIENTE PASO)")
+        # Actualizar contexto con el nuevo mensaje
+        final_ctx = (new_ctx + "\n" + next_message).strip()
+        upsert_progress(exercise_id, next_step, 0, final_ctx, user_id=req.user_id)
         
         return {
             "exercise_id": exercise_id,
             "status": next_status,
             "step": next_step,
             "error_count": 0,
-            "message": combined_message,
+            "message": next_message,  # ✅ Mensaje del SIGUIENTE paso
             "expected_answer": next_expected,
-            "context": new_ctx,
+            "context": final_ctx,
             "nlu": nlu,
         }
     else:
-        # Ejercicio completado
-        print("[DEBUG] Motor indica fin de ejercicio")
-        
-        final_message = f"{success_msg}\n\n🎉 ¡Ejercicio completado!"
-        new_ctx = (prev_ctx + "\n" + final_message).strip()
-        
-        upsert_progress(exercise_id, next_step, 0, new_ctx, user_id=req.user_id)
-        save_history(
-            req.user_id, exercise_id, req.question, req.last_answer, final_message, next_step, 0
-        )
-        
-        print(f"[GUARDANDO] step={next_step} | errors=0 (ejercicio completado)")
-        
+        # Fallback: devolver el mensaje original si el motor falla
         return {
             "exercise_id": exercise_id,
-            "status": "done",
+            "status": status,
             "step": next_step,
             "error_count": 0,
-            "message": final_message,
-            "expected_answer": None,
+            "message": message,
+            "expected_answer": det.get("expected_answer"),
             "context": new_ctx,
             "nlu": nlu,
         }

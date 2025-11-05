@@ -6,8 +6,12 @@ Analiza lo que el niño escribe o dice y decide:
 - subject (materia)
 - intent (tipo de tarea)
 - engine (motor a invocar)
-Luego usa el núcleo de Tutorín (engine_loader + BaseEngine)
-para ejecutar el motor correspondiente.
+
+NUEVA LÓGICA:
+1. Detecta PRIMERO si es un problema de texto contextual
+2. Si es problema → usa generic_engine con IA
+3. Si no → aplica reglas matemáticas para operaciones puras
+✅ CORREGIDO: Detecta decimales con multiplicación y división
 """
 
 import json
@@ -36,16 +40,119 @@ def _load_labels() -> Dict[str, Any]:
 
 _LABELS = _load_labels()
 
-# === PATRONES DIRECTOS (detección rápida) ===
-_REGEX_RULES = [
-    (r"\d+\s*/\s*\d+\s*[\+\-]\s*\d+(?:\s*/\s*\d+)?", ("matematicas", "fracciones", "fractions_engine")),
-    (r"\d+\s*(?:÷|:|/)\s*\d+", ("matematicas", "division", "division_engine")),
-    (r"\d+\s*(?:×|\*|x|X|·)\s*\d+", ("matematicas", "multiplicacion", "multiplication_engine")),
-    (r"\d+\s*\+\s*\d+", ("matematicas", "suma", "addition_engine")),
-    (r"\d+\s*\-\s*\d+", ("matematicas", "resta", "subtraction_engine")),
-    (r"\d+[.,]\d+\s*([+\-×x*/:])\s*\d+[.,]\d+", ("matematicas", "decimales", "decimals_engine")),
-    (r"\d+\s*%\s*\d+", ("matematicas", "porcentajes", "percentages_engine"))
+# === PALABRAS QUE INDICAN PROBLEMA DE TEXTO ===
+_PROBLEM_WORDS = [
+    # Contexto de personas
+    "tiene", "tenía", "compró", "compra", "vendió", "vende", "reparte", "da", "dan",
+    "recibe", "recibió", "gana", "ganó", "pierde", "perdió", "queda", "quedan",
+    
+    # Contexto de objetos/situaciones
+    "manzanas", "caramelos", "cromos", "euros", "kilos", "metros", "litros",
+    "casa", "cajón", "tienda", "mercado", "clase", "colegio",
+    
+    # Personas/nombres
+    "maría", "juan", "pedro", "laura", "cecilia", "danila", "luis", "ana",
+    "niño", "niños", "alumno", "alumnos", "persona", "personas",
+    
+    # Preguntas típicas de problemas
+    "cuánto", "cuántos", "cuántas", "total", "entre todos", "en total",
+    "al cabo", "después", "antes", "ahora",
+    
+    # Verbos narrativos
+    "había", "hay", "hubo", "fueron", "van", "vinieron", "llegaron",
+    
+    # Conectores narrativos
+    "cada uno", "cada una", "entre", "juntos", "además", "también", "pero"
 ]
+
+# === PATRONES MATEMÁTICOS PUROS (solo números y operadores) ===
+# ⚠️ IMPORTANTE: El orden importa - reglas más específicas primero
+_PURE_MATH_PATTERNS = [
+    # 1️⃣ FRACCIONES (más específico)
+    (r"^\s*\d+\s*/\s*\d+\s*[\+\-]\s*\d+\s*/\s*\d+\s*$", ("matematicas", "fracciones", "fractions_engine")),
+    
+    # 2️⃣ DECIMALES - TODAS LAS VARIANTES (deben ir ANTES de multiplicación/división/suma/resta)
+    # Caso 1: Ambos números con decimales (0.234 + 0.5)
+    (r"^\s*\d+[.,]\d+\s*([+\-×x*/÷:])\s*\d+[.,]\d+\s*$", ("matematicas", "decimales", "decimals_engine")),
+    
+    # Caso 2: Primer número decimal, segundo entero (0.234 * 2)
+    (r"^\s*\d+[.,]\d+\s*([+\-×x*/÷:])\s*\d+\s*$", ("matematicas", "decimales", "decimals_engine")),
+    
+    # Caso 3: Primer número entero, segundo decimal (2 * 0.234)
+    (r"^\s*\d+\s*([+\-×x*/÷:])\s*\d+[.,]\d+\s*$", ("matematicas", "decimales", "decimals_engine")),
+    
+    # 3️⃣ PORCENTAJES
+    (r"^\s*\d+\s*%\s*(?:de\s*)?\d+\s*$", ("matematicas", "porcentajes", "percentages_engine")),
+    
+    # 4️⃣ OPERACIONES BÁSICAS (después de decimales)
+    # División pura: 24 / 6
+    (r"^\s*\d+\s*(?:÷|:|/)\s*\d+\s*$", ("matematicas", "division", "division_engine")),
+    
+    # Multiplicación pura: 5 × 3
+    (r"^\s*\d+\s*(?:×|\*|x|X|·)\s*\d+\s*$", ("matematicas", "multiplicacion", "multiplication_engine")),
+    
+    # Suma pura: 25 + 37
+    (r"^\s*\d+\s*\+\s*\d+\s*$", ("matematicas", "suma", "addition_engine")),
+    
+    # Resta pura: 45 - 18
+    (r"^\s*\d+\s*\-\s*\d+\s*$", ("matematicas", "resta", "subtraction_engine")),
+]
+
+
+# ================================================================
+# 🧠 FUNCIONES AUXILIARES
+# ================================================================
+
+def _is_text_problem(text: str) -> bool:
+    """
+    Detecta si el texto es un problema contextual (no una operación pura).
+    
+    Criterios:
+    - Tiene más de 30 caracteres (problemas suelen ser largos)
+    - Contiene al menos 2 palabras contextuales
+    - O contiene pregunta típica (¿Cuánto...?)
+    """
+    text_lower = text.lower()
+    
+    # Criterio 1: Longitud
+    if len(text) < 30:
+        return False
+    
+    # Criterio 2: Palabras contextuales
+    word_count = sum(1 for word in _PROBLEM_WORDS if word in text_lower)
+    if word_count >= 2:
+        return True
+    
+    # Criterio 3: Preguntas directas
+    question_patterns = [
+        r"¿\s*cuánto[s]?\s+",
+        r"¿\s*cuánta[s]?\s+",
+        r"cuánto[s]?\s+.*\?",
+        r"cuánta[s]?\s+.*\?"
+    ]
+    if any(re.search(pattern, text_lower) for pattern in question_patterns):
+        return True
+    
+    return False
+
+
+def _is_pure_math_operation(text: str) -> bool:
+    """
+    Verifica si es una operación matemática PURA (solo números y operadores).
+    Ejemplo: "25 + 37" → True
+    Ejemplo: "Juan tiene 25 manzanas" → False
+    """
+    # Eliminar espacios y verificar longitud
+    clean = text.strip()
+    if len(clean) < 3:
+        return False
+    
+    # Verificar patrones puros
+    for pattern, _ in _PURE_MATH_PATTERNS:
+        if re.match(pattern, clean):
+            return True
+    
+    return False
 
 
 # ================================================================
@@ -54,30 +161,90 @@ _REGEX_RULES = [
 def analyze_prompt(prompt: str) -> Dict[str, Any]:
     """
     Detecta la materia, el tipo de operación (intent) y el motor asociado.
-    Devuelve un diccionario con subject, intent, engine y confidence.
+    
+    PRIORIDAD:
+    1. Problemas de texto → generic_engine
+    2. Operaciones matemáticas puras → motores específicos
+    3. Palabras clave → motores por tema
+    4. Fallback → generic_engine
     """
-    text = (prompt or "").strip().lower()
+    text = (prompt or "").strip()
     if not text:
         return {"subject": "general", "intent": "vacío", "engine": None, "confidence": 0.0}
-
-    # --- 1️⃣ Reglas directas (regex) ---
-    for pattern, out in _REGEX_RULES:
-        if re.search(pattern, text):
-            subject, intent, engine = out
-            return {"subject": subject, "intent": intent, "engine": engine, "confidence": 0.95}
-
-    # --- 2️⃣ Palabras clave desde nlu_labels ---
+    
+    text_lower = text.lower()
+    
+    print(f"[AI_ANALYZER] 🔍 Analizando: {text[:60]}...")
+    
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 1️⃣ DETECCIÓN DE PROBLEMAS DE TEXTO (PRIORIDAD MÁXIMA)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if _is_text_problem(text):
+        print(f"[AI_ANALYZER] ✅ Detectado como PROBLEMA DE TEXTO")
+        return {
+            "subject": "matematicas",
+            "intent": "problemas",
+            "engine": "generic_engine",
+            "confidence": 0.95
+        }
+    
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 2️⃣ OPERACIONES MATEMÁTICAS PURAS
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    for pattern, result in _PURE_MATH_PATTERNS:
+        if re.match(pattern, text):
+            subject, intent, engine = result
+            print(f"[AI_ANALYZER] ✅ Detectado como OPERACIÓN PURA: {intent}")
+            return {
+                "subject": subject,
+                "intent": intent,
+                "engine": engine,
+                "confidence": 0.90
+            }
+    
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 3️⃣ PALABRAS CLAVE DESDE nlu_labels.json
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     for subject, cfg in _LABELS.items():
         palabras = cfg.get("palabras_clave", [])
         engines = cfg.get("engines", {})
 
         for intent, engine in engines.items():
             tokens = [intent] + palabras
-            if any(tok in text for tok in tokens):
-                return {"subject": subject, "intent": intent, "engine": engine, "confidence": 0.75}
-
-    # --- 3️⃣ Fallback ---
-    return {"subject": "general", "intent": "desconocido", "engine": None, "confidence": 0.3}
+            if any(tok in text_lower for tok in tokens):
+                print(f"[AI_ANALYZER] ✅ Detectado por palabras clave: {intent}")
+                return {
+                    "subject": subject,
+                    "intent": intent,
+                    "engine": engine,
+                    "confidence": 0.70
+                }
+    
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 4️⃣ FALLBACK: Si tiene números y texto, asumir problema
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    has_numbers = bool(re.search(r"\d", text))
+    has_letters = bool(re.search(r"[a-záéíóúñ]", text_lower))
+    
+    if has_numbers and has_letters and len(text) > 20:
+        print(f"[AI_ANALYZER] ⚠️ Fallback: problema genérico")
+        return {
+            "subject": "matematicas",
+            "intent": "problemas",
+            "engine": "generic_engine",
+            "confidence": 0.60
+        }
+    
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 5️⃣ ÚLTIMO RECURSO
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    print(f"[AI_ANALYZER] ⚠️ No se pudo clasificar específicamente")
+    return {
+        "subject": "general",
+        "intent": "desconocido",
+        "engine": "generic_engine",
+        "confidence": 0.30
+    }
 
 
 # ================================================================
@@ -116,6 +283,8 @@ def run_engine_for(engine_name: str, prompt: str, step: int, answer: str, errors
         return result
     except Exception as e:
         print(f"[AI_ANALYZER] ❌ Error en motor {engine_name}: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "status": "error",
             "message": f"Se produjo un error en el motor {engine_name}: {str(e)}",
@@ -136,19 +305,29 @@ def test_analyzer():
     examples = [
         "3 + 5",
         "2,5 + 1,25",
+        "0.234 * 2",
+        "2 * 0.234",
+        "0.235 / 2",
         "25% de 80",
         "4/6 + 1/3",
-        "dividir 24 entre 6"
+        "dividir 24 entre 6",
+        "Laura y Cecilia compraron 1/4 kilo de helado cada uno. Danila compró 1 kilo y medio, y Pedro compró 1/2 kilo. ¿Cuánto helado tienen entre todos?",
+        "María tiene 5 caramelos y le dan 3 más. ¿Cuántos tiene ahora?",
+        "En casa hay un cajón con 8 manteles. Al cabo de unos días se han ensuciado 6 manteles. ¿Cuántos manteles no se han ensuciado?"
     ]
 
     for ex in examples:
+        print("\n" + "="*60)
         info = analyze_prompt(ex)
-        print("\n🧩", ex)
+        print("🧩", ex)
         print("→", info)
 
         engine_name = info["engine"]
         if engine_name:
-            res = run_engine_for(engine_name, ex, 0, "", 0)
-            print("⚙️ Resultado:", res)
+            try:
+                res = run_engine_for(engine_name, ex, 0, "", 0)
+                print("⚙️ Resultado:", res.get("status"), "-", res.get("message", "")[:100])
+            except Exception as e:
+                print(f"❌ Error ejecutando: {e}")
         else:
             print("❌ No se detectó motor.")

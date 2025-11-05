@@ -1,178 +1,233 @@
 # -*- coding: utf-8 -*-
 """
 hints_decimals.py
-Pistas progresivas para decimales según nivel de error.
-Compatible con decimals_engine.py
+Pistas progresivas para decimales.
+✅ VERSIÓN ACTUALIZADA: Coherente con el motor corregido
 """
 from typing import Optional
+import os
+import re
 
-# ────────── Pistas por nivel ──────────
-def get_hint(hint_type: str, errors: int = 0) -> str:
-    """
-    Devuelve una pista adaptada al tipo de paso y número de errores.
-    Args:
-        hint_type: tipo de paso ('decimal_start', 'decimal_identificar', etc.)
-        errors: nivel de error (0-4+)
-    """
-    hint_type = (hint_type or "").strip().lower()
-    errors = max(0, min(int(errors or 0), 4))
-    
-    # ────────── INICIO / DETECCIÓN ──────────
-    if hint_type == "decimal_start":
-        if errors == 0:
-            return (
-                "🔍 Recuerda que los números con coma se llaman <b>decimales</b>. "
-                "Por ejemplo, 3,2 significa tres enteros y dos décimas."
-            )
-        elif errors == 1:
-            return (
-                "💡 Prueba a escribir una operación con decimales, "
-                "como <code>2,5 + 1,4</code> o <code>3,2 × 1,5</code>."
-            )
-        else:
-            return (
-                "✅ Los decimales se escriben con coma (en España) o punto (en otros países). "
-                "La parte antes de la coma son los <b>enteros</b>, y la parte después son las <b>décimas, centésimas</b>..."
-            )
-    
-    if hint_type == "decimal_identificar":
-        if errors == 0:
-            return (
-                "👉 Observa el signo que une los números: "
-                "si es + es una <b>suma</b>, si es − una <b>resta</b>, "
-                "si es × una <b>multiplicación</b> y si es ÷ una <b>división</b>."
-            )
-        elif errors == 1:
-            return "🧮 Fíjate bien en el símbolo entre los dos números. " + _question("¿Qué operación es?")
-        else:
-            return (
-                "💡 Los símbolos matemáticos son: + (suma), − (resta), × (multiplicación), ÷ (división). "
-                "Identifica cuál aparece en tu operación."
-            )
-    
-    # ────────── ALINEAR COMAS ──────────
-    if hint_type == "decimal_alinear":
-        if errors == 0:
-            return (
-                "📏 Alinea las <b>comas en vertical</b> para que las unidades y décimas "
-                "queden en la misma columna. Así podrás sumar o restar bien."
-            )
-        elif errors == 1:
-            return (
-                "🧮 Escribe los números uno debajo del otro, "
-                "de forma que las <b>comas estén alineadas</b>. ¡Eso te ayudará mucho!"
-            )
-        elif errors == 2:
-            return (
-                "💡 Ejemplo: si tienes 3,25 + 1,4, escríbelo así:\n"
-                "<pre>  3,25\n+ 1,40\n------</pre>\n"
-                "Las comas deben quedar una debajo de otra."
-            )
-        else:
-            return (
-                "✅ Recuerda: las comas deben quedar una debajo de otra, "
-                "porque cada cifra tiene que coincidir con su misma posición "
-                "(unidades con unidades, décimas con décimas)."
-            )
-    
-    # ────────── OPERAR SIN COMA ──────────
-    if hint_type == "decimal_operar":
-        if errors == 0:
-            return (
-                "✏️ Puedes quitar la coma temporalmente para hacer la operación "
-                "como si fueran enteros. Luego la volveremos a poner al final."
-            )
-        elif errors == 1:
-            return (
-                "💡 Si te cuesta, multiplica ambos números por 10 o 100 para quitar la coma, "
-                "haz la operación y después <b>coloca la coma</b> según las cifras decimales totales."
-            )
-        elif errors == 2:
-            return (
-                "🧮 Ejemplo: 2,3 × 1,5 → quita las comas: 23 × 15 = 345. "
-                "Luego cuenta: había 1 decimal en 2,3 y 1 decimal en 1,5 = 2 decimales en total. "
-                "Resultado: 3,45."
-            )
-        else:
-            return (
-                "✅ Recuerda: quita la coma, haz la operación normal y al final vuelve a colocarla. "
-                "Cuenta cuántas cifras había detrás de la coma entre los dos números."
-            )
-    
-    # ────────── RECOLOCAR COMA (RESULTADO FINAL) ──────────
-    if hint_type == "decimal_resultado":
-        if errors == 0:
-            return (
-                "🎯 Coloca la coma en el resultado para que tenga tantas cifras decimales "
-                "como la suma de las cifras decimales de los números originales."
-            )
-        elif errors == 1:
-            return (
-                "🤓 Cuenta cuántas cifras hay detrás de las comas en los números que has usado. "
-                "Esa es la pista para saber dónde va la coma en el resultado."
-            )
-        elif errors == 2:
-            return (
-                "💡 Si ambos números tenían una cifra decimal, el resultado debe tener "
-                "<b>dos cifras decimales</b>. Por ejemplo, 2,1 × 1,3 = 2,73."
-            )
-        else:
-            return (
-                "✅ Muy bien. Ejemplo completo:\n"
-                "3,2 × 1,5: quitamos comas → 32 × 15 = 480.\n"
-                "Contamos decimales: 1 + 1 = 2 decimales.\n"
-                "Resultado: 4,80 (o 4,8)."
-            )
-    
-    # ────────── ERROR / DESCONOCIDO ──────────
-    if hint_type == "decimal_error":
-        return (
-            "😅 Parece que algo no encaja. Intenta revisar la operación paso a paso. "
-            "A veces ayuda escribir los números alineados y repasar la posición de la coma."
-        )
-    
-    # ────────── FALLBACK ──────────
-    return (
-        "🤔 Recuerda: en las operaciones con decimales, "
-        "las comas deben estar alineadas y el resultado debe tener la coma en el lugar correcto."
-    )
+# ══════════════════════════════════════════════════════════════
+# INTEGRACIÓN CON OPENAI
+# ══════════════════════════════════════════════════════════════
 
-# ────────── Utilidad auxiliar ──────────
-def _question(text: str) -> str:
-    """Asegura que termine en interrogación."""
-    t = text.strip()
-    return t if t.endswith("?") else t + "?"
-
-# ────────── Integración con OpenAI ──────────
 try:
     from openai import OpenAI
-    import os
     _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     _USE_AI = bool(os.getenv("OPENAI_API_KEY"))
 except Exception:
     _client = None
     _USE_AI = False
 
-PROMPT = (
-    "Eres Tutorín (profesor de Primaria, LOMLOE). Da pistas concisas (1–2 frases) "
-    "para operaciones con decimales. No reveles la solución completa.  "
-    "Paso: {step} | Errores: {err}"
-)
+# ══════════════════════════════════════════════════════════════
+# PROMPTS ESPECÍFICOS POR TIPO DE HINT
+# ══════════════════════════════════════════════════════════════
 
-def _ai_hint(hint_type: str, err: int) -> Optional[str]:
-    """Genera pista con OpenAI si err >= 2."""
+PROMPT_TEMPLATES = {
+    "decimal_suma": """Eres Tutorín, profesor de Primaria (España, LOMLOE).
+
+El alumno está sumando decimales DIRECTAMENTE (sin quitar la coma).
+
+CONTEXTO: {context}
+RESPUESTA DEL ALUMNO: "{answer}"
+ERRORES: {err}
+
+Da UNA pista breve (máximo 2 frases) sobre cómo alinear las comas y sumar.
+NO des el resultado final.""",
+
+    "decimal_resta": """Eres Tutorín, profesor de Primaria (España, LOMLOE).
+
+El alumno está restando decimales DIRECTAMENTE (sin quitar la coma).
+
+CONTEXTO: {context}
+RESPUESTA DEL ALUMNO: "{answer}"
+ERRORES: {err}
+
+Da UNA pista breve (máximo 2 frases) sobre cómo alinear las comas y restar.
+NO des el resultado final.""",
+
+    "decimal_convert": """Eres Tutorín, profesor de Primaria (España, LOMLOE).
+
+El alumno está aprendiendo a convertir decimales a enteros para MULTIPLICAR.
+
+CONTEXTO: {context}
+RESPUESTA DEL ALUMNO: "{answer}"
+ERRORES: {err}
+
+Da UNA pista breve (máximo 2 frases) sobre cómo mover la coma para convertir a enteros.
+NO des la respuesta completa.""",
+
+    "decimal_multiplicacion": """Eres Tutorín, profesor de Primaria (España, LOMLOE).
+
+El alumno debe multiplicar dos números enteros (que originalmente eran decimales).
+
+CONTEXTO: {context}
+RESPUESTA DEL ALUMNO: "{answer}"
+ERRORES: {err}
+
+Da UNA pista breve (máximo 2 frases) sobre cómo hacer la multiplicación.
+NO des el resultado final.""",
+
+    "decimal_final": """Eres Tutorín, profesor de Primaria (España, LOMLOE).
+
+El alumno debe colocar la coma en el resultado de una MULTIPLICACIÓN contando decimales desde la derecha.
+
+CONTEXTO: {context}
+RESPUESTA DEL ALUMNO: "{answer}"
+ERRORES: {err}
+
+Da UNA pista breve (máximo 2 frases) sobre cómo colocar la coma correctamente.
+NO des el resultado final.""",
+
+    "decimal_div_count": """Eres Tutorín, profesor de Primaria (España, LOMLOE).
+
+El alumno debe contar cuántas cifras decimales tiene el divisor.
+
+CONTEXTO: {context}
+RESPUESTA DEL ALUMNO: "{answer}"
+ERRORES: {err}
+
+Da UNA pista breve (máximo 2 frases) sobre cómo contar las cifras después de la coma.
+NO des la respuesta.""",
+
+    "decimal_div_calculate": """Eres Tutorín, profesor de Primaria (España, LOMLOE).
+
+El alumno debe dividir dos números después de haber ajustado los decimales.
+
+CONTEXTO: {context}
+RESPUESTA DEL ALUMNO: "{answer}"
+ERRORES: {err}
+
+Da UNA pista breve (máximo 2 frases) sobre cómo hacer la división.
+NO des el resultado final."""
+}
+
+# ══════════════════════════════════════════════════════════════
+# GENERACIÓN DE HINTS CON IA
+# ══════════════════════════════════════════════════════════════
+
+def _ai_hint(hint_type: str, context: str, answer: str, err: int) -> Optional[str]:
+    """Genera pista con OpenAI si está disponible y err >= 2."""
     if not _USE_AI or not _client or err < 2:
         return None
+    
+    prompt_template = PROMPT_TEMPLATES.get(hint_type)
+    if not prompt_template:
+        return None
+    
+    prompt = prompt_template.format(context=context, answer=answer, err=err)
+    
     try:
         res = _client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             messages=[
-                {"role": "system", "content": "Eres un profesor de Primaria empático y paciente."},
-                {"role": "user", "content": PROMPT.format(step=hint_type, err=err)},
+                {"role": "system", "content": "Eres Tutorín, profesor de Primaria empático y claro. Hablas con naturalidad a niños de 8-12 años."},
+                {"role": "user", "content": prompt}
             ],
-            temperature=0.4,
             max_tokens=120,
+            temperature=0.7
         )
-        return (res.choices[0].message.content or "").strip()
-    except Exception:
+        
+        ai_response = res.choices[0].message.content.strip()
+        return ai_response.replace('"', '').replace("'", "")
+        
+    except Exception as e:
+        print(f"[AI Hint Error] {e}")
         return None
+
+# ══════════════════════════════════════════════════════════════
+# FUNCIÓN PRINCIPAL
+# ══════════════════════════════════════════════════════════════
+
+def get_hint(hint_type: str, errors: int, context: str = "", answer: str = "") -> str:
+    """
+    Genera pista según tipo, errores, contexto y respuesta del alumno.
+    
+    Niveles:
+    - Error 1: Pista general
+    - Error 2+: Pista con IA (si está disponible)
+    - Fallback: Pista genérica
+    """
+    
+    # Intentar con IA primero (si err >= 2)
+    if errors >= 2:
+        ai_hint = _ai_hint(hint_type, context, answer, errors)
+        if ai_hint:
+            return f"💡 <b>Pista:</b> {ai_hint}"
+    
+    # ──────────────────────────────────────────────────────────
+    # FALLBACK: Pistas locales por tipo
+    # ──────────────────────────────────────────────────────────
+    
+    # ✅ SUMA Y RESTA: Ahora es operación directa
+    if hint_type == "decimal_suma":
+        return (
+            "💡 <b>Recuerda:</b> Para sumar decimales, <u>NO quites la coma</u>.<br/>"
+            "Solo alinea las comas y suma como si fueran números enteros.<br/><br/>"
+            "🔹 Ejemplo:<br/>"
+            "<pre style='background: #e3f2fd; padding: 5px; font-family: monospace;'>"
+            "  2.5\n"
+            "+ 1.3\n"
+            "-----\n"
+            "  3.8"
+            "</pre>"
+        )
+    
+    elif hint_type == "decimal_resta":
+        return (
+            "💡 <b>Recuerda:</b> Para restar decimales, <u>NO quites la coma</u>.<br/>"
+            "Solo alinea las comas y resta como si fueran números enteros.<br/><br/>"
+            "🔹 Ejemplo:<br/>"
+            "<pre style='background: #e3f2fd; padding: 5px; font-family: monospace;'>"
+            "  5.6\n"
+            "- 2.3\n"
+            "-----\n"
+            "  3.3"
+            "</pre>"
+        )
+    
+    # ✅ MULTIPLICACIÓN: Mantiene método de conversión
+    elif hint_type == "decimal_convert":
+        return (
+            "💡 <b>Recuerda:</b> Para multiplicar decimales, primero los convertimos a enteros.<br/>"
+            "Mueve la coma hacia la derecha hasta que desaparezca.<br/><br/>"
+            "🔹 Ejemplo: <b>2.5</b> → <b>25</b> (movimos 1 posición)<br/>"
+            "🔹 Ejemplo: <b>0.34</b> → <b>34</b> (movimos 2 posiciones)"
+        )
+    
+    elif hint_type == "decimal_multiplicacion":
+        return (
+            "💡 <b>Recuerda:</b> Multiplica los números enteros que obtuviste.<br/>"
+            "Puedes usar papel y lápiz si lo necesitas."
+        )
+    
+    elif hint_type == "decimal_final":
+        return (
+            "💡 <b>Recuerda:</b> Cuenta cuántas cifras decimales tienen los dos números originales.<br/>"
+            "Súmalas y coloca la coma contando esa cantidad de posiciones desde la derecha."
+        )
+    
+    # ✅ DIVISIÓN: Mantiene método pero corregido
+    elif hint_type == "decimal_div_count":
+        return (
+            "💡 <b>Recuerda:</b> Las cifras decimales son las que están <b>después de la coma</b>.<br/>"
+            "🔹 Ejemplo: <b>2.5</b> tiene <b>1</b> cifra decimal<br/>"
+            "🔹 Ejemplo: <b>0.34</b> tiene <b>2</b> cifras decimales"
+        )
+    
+    elif hint_type == "decimal_div_calculate":
+        return (
+            "💡 <b>Recuerda:</b> Divide los números que obtuviste después de mover las comas.<br/>"
+            "Puedes hacer la división larga en papel si lo necesitas."
+        )
+    
+    # ──────────────────────────────────────────────────────────
+    # FALLBACK GENÉRICO
+    # ──────────────────────────────────────────────────────────
+    return (
+        "🤔 <b>Piensa en los pasos:</b><br/>"
+        "• <b>Suma/Resta:</b> Alinea las comas y opera directamente<br/>"
+        "• <b>Multiplicación:</b> Convierte a enteros, multiplica, coloca coma<br/>"
+        "• <b>División:</b> Ajusta decimales del divisor y divide"
+    )

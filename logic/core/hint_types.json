@@ -40,7 +40,12 @@
       "decimal_alinear",
       "decimal_operar",
       "decimal_resultado",
-      "decimal_error"
+      "decimal_error",
+      "decimal_convert",
+      "decimal_multiply",
+      "decimal_final",
+      "decimal_result",
+      "decimal_complete"
     ],
     "porcentajes": [
       "perc_frac",

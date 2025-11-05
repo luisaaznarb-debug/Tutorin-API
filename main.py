@@ -8,6 +8,12 @@ Ejecuta la aplicación creada en app.py.
 """
 
 import os
+from dotenv import load_dotenv
+
+# ✅ CARGAR .env ANTES de importar CUALQUIER cosa
+load_dotenv()
+
+# ✅ AHORA sí importar la app (después de cargar las variables)
 import uvicorn
 from app import app
 

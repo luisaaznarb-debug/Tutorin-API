@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 # Routers principales
 from routes.analyze_prompt import router as analyze_router
 from routes.solve import router as solve_router
+from routes.analyze_image import router as image_router  # ✅ LÍNEA NUEVA
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -46,13 +47,14 @@ def create_app() -> FastAPI:
     # Rutas principales
     app.include_router(analyze_router, prefix="/analyze", tags=["Analyze"])
     app.include_router(solve_router, prefix="/solve", tags=["Solve"])
+    app.include_router(image_router, prefix="/analyze", tags=["Image Analysis"])  # ✅ LÍNEA NUEVA
 
     @app.get("/")
     def root():
         return {
             "message": "👋 Hola, soy Tutorín API.",
             "status": "online",
-            "routes": ["/analyze/text", "/solve"]
+            "routes": ["/analyze/text", "/analyze/image", "/solve"]  # ✅ ACTUALIZADO
         }
 
     return app

@@ -22,6 +22,9 @@ except Exception as e:
 def is_valid_hint(topic: str, hint_type: str) -> bool:
     """
     Comprueba si un hint_type es válido para una materia o área dada.
+    Busca en dos niveles:
+    1. topic como área principal (ej: "matematicas")
+    2. topic como subsección dentro de cualquier área (ej: "division" dentro de "matematicas")
     """
     topic = (topic or "").lower()
     hint_type = (hint_type or "").strip()
@@ -29,9 +32,17 @@ def is_valid_hint(topic: str, hint_type: str) -> bool:
     if not topic or not hint_type:
         return False
 
+    # Nivel 1: Buscar topic como área principal
     for area, sections in _HINT_TYPES.items():
         if topic == area.lower():
             for sub, hints in sections.items():
                 if hint_type in hints:
                     return True
+    
+    # Nivel 2: Buscar topic como subsección dentro de cualquier área
+    for area, sections in _HINT_TYPES.items():
+        for sub, hints in sections.items():
+            if topic == sub.lower() and hint_type in hints:
+                return True
+    
     return False

@@ -8,19 +8,11 @@ from .hints_utils import _extract_pre_block, _question
 import re
 from typing import Optional
 
-# ────────── Utilidades ──────────
-def _parse_div_from_context(ctx: str):
-    """Extrae dividendo y divisor del contexto."""
-    txt = _extract_pre_block(ctx)
-    m = re.search(r"(\d+)\s*[÷/:]\s*(\d+)", txt)
-    if m:
-        return int(m.group(1)), int(m.group(2))
-    return None
-
 # ────────── Pistas por subpaso ──────────
 def _div_grupo_hint(context: str, err: int, cycle: str) -> str:
     """Pistas para elegir el primer grupo del dividendo."""
-    m = re.search(r"dividir entre <b>(\d+)</b>", context)
+    # CORREGIDO: Buscar el patrón que realmente genera el motor
+    m = re.search(r"divisor = <b>(\d+)</b>", context) or re.search(r"divisor.*?<b>(\d+)</b>", context)
     d = int(m.group(1)) if m else None
     if err == 1:
         return (
@@ -33,10 +25,10 @@ def _div_grupo_hint(context: str, err: int, cycle: str) -> str:
             f"Ese será el primer grupo con el que empezamos a dividir. "
             + _question("¿Cuál es ese número?")
         )
-    if err >= 3:
+    if err >= 3 and d:
         return (
-            "💡 Recuerda: el primer grupo es el prefijo más corto del dividendo "
-            "que sea suficientemente grande para dividir. Toma las cifras de izquierda a derecha."
+            f"💡 Empieza con el mínimo número de cifras que sea ≥ {d}. "
+            "Por ejemplo, si el dividendo es 847 y el divisor es 23, empiezas con 84 (no con 8)."
         )
     return "Toma el prefijo mínimo del dividendo que sea ≥ al divisor."
 
@@ -45,23 +37,36 @@ def _div_qdigit_hint(context: str, err: int, cycle: str) -> str:
     m = re.search(r"cabe <b>(\d+)</b> en <b>(\d+)</b>", context)
     div = int(m.group(1)) if m else None
     grp = int(m.group(2)) if m else None
+    
     if err == 1:
         return (
             "👉 Piensa: ¿cuántas veces cabe el divisor en este grupo sin pasarte? "
             "Esa es la cifra del cociente. " + _question("¿Qué cifra pones?")
         )
     if err == 2 and div and grp:
-        k = max(1, grp // div)
-        return (
-            f"🧮 Prueba con {div}×{k}={div*k}. "
-            f"Si {div*k} > {grp}, baja 1; si {div*k} < {grp}, puedes subir 1. "
-            + _question("¿Cuál es la cifra correcta?")
-        )
+        # MEJORADO: Mostrar 3 opciones (una menor, la correcta, una mayor)
+        if grp < div:
+            return (
+                f"🧮 Como {grp} es menor que {div}, la cifra del cociente es 0. "
+                "Esto significa que este grupo no alcanza para dividir. "
+                + _question("¿Qué cifra escribes?")
+            )
+        else:
+            q_correcto = grp // div
+            q_menor = max(0, q_correcto - 1)
+            q_mayor = q_correcto + 1
+            return (
+                f"🧮 Prueba con la tabla del {div}:<br>"
+                f"• {div}×{q_menor}={div*q_menor} (se queda corto)<br>"
+                f"• {div}×{q_correcto}={div*q_correcto} (¡justo o casi!)<br>"
+                f"• {div}×{q_mayor}={div*q_mayor} (se pasa de {grp})<br>"
+                + _question("¿Cuál es la cifra correcta?")
+            )
     if err >= 3 and div and grp:
         q = grp // div
         return (
-            f"💡 La cifra correcta es <b>{q}</b>, porque {div}×{q}={div*q} ≤ {grp} "
-            f"y {div}×{q+1}={div*(q+1)} > {grp}."
+            f"💡 La cifra correcta es <b>{q}</b>, porque {div}×{q}={div*q} es menor o igual que {grp} "
+            f"y {div}×{q+1}={div*(q+1)} es mayor que {grp}."
         )
     return "Usa la tabla del divisor y elige la cifra más alta que no se pase."
 
@@ -79,10 +84,19 @@ def _div_resta_hint(context: str, err: int, cycle: str) -> str:
             + _question("¿Cuál es el resto?")
         )
     if err >= 3:
+        # MEJORADO: Más específico sobre cómo verificar
+        m = re.search(r"resta:\s*<b>(\d+)</b>\s*−\s*<b>(\d+)×(\d+)</b>", context)
+        if m:
+            g, d, q = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            prod = d * q
+            resto = g - prod
+            return (
+                f"💡 La resta es: {g} − {prod} = <b>{resto}</b>. "
+                "Verifica tu cálculo cuidadosamente."
+            )
         return (
             "💡 Comprueba que el resto sea menor que el divisor. "
-            "Si no lo es, significa que la cifra del cociente era demasiado pequeña. "
-            "Ajusta la cifra del cociente y vuelve a restar."
+            "Si no lo es, significa que la cifra del cociente era demasiado pequeña."
         )
     return "Resta el producto y verifica que el resto < divisor."
 
@@ -96,10 +110,21 @@ def _div_bajar_hint(context: str, err: int, cycle: str) -> str:
     if err == 2:
         return (
             "🧮 Piensa el nuevo número como: resto×10 + cifra bajada. "
-            "Ahora vuelve a decidir la siguiente cifra del cociente. "
+            "Es como 'pegar' la cifra al final del resto. "
             + _question("¿Cuál es el nuevo grupo?")
         )
     if err >= 3:
+        # MEJORADO: Extraer números específicos del contexto
+        m_cifra = re.search(r"siguiente cifra:\s*<b>(\d+)</b>", context)
+        m_resto = re.search(r"resto.*?<b>(\d+)</b>", context)
+        if m_cifra and m_resto:
+            cifra = m_cifra.group(1)
+            resto = m_resto.group(1)
+            nuevo = resto + cifra
+            return (
+                f"💡 El nuevo número es: {resto} + {cifra} bajada = <b>{nuevo}</b>. "
+                "Ahora trabaja con este número."
+            )
         return (
             "💡 Forma bien el nuevo número antes de elegir la siguiente cifra del cociente. "
             "Recuerda que es como si pegaras la cifra bajada al final del resto."
@@ -166,3 +191,4 @@ def get_hint(hint_type: str, errors: int = 0, context: str = "", answer: str = "
         return _div_bajar_hint(context, ec, "c2")
     else:
         return "💡 Vamos paso a paso: elige el grupo, calcula la cifra, resta, baja la siguiente cifra y repite."
+    

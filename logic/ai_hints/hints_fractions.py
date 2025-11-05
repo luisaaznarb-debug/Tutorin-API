@@ -2,6 +2,7 @@
 """
 hints_fractions.py
 Pistas progresivas para fracciones según nivel de error.
+CORREGIDO: Las pistas NO revelan la respuesta
 Compatible con fractions_engine.py
 """
 
@@ -101,7 +102,7 @@ def _frac_mcm_hint(context: str, err: int, cycle: str) -> str:
         return (
             f"💡 Múltiplos de {b}: {multiples_b}\n"
             f"Múltiplos de {d}: {multiples_d}\n"
-            f"El primer número que aparece en ambas listas es <b>{m}</b>."
+            + _question("¿Cuál es el primer número que aparece en ambas listas?")
         )
     
     if err >= 4:
@@ -124,7 +125,7 @@ def _frac_equiv_hint(context: str, err: int, cycle: str) -> str:
         return (
             f"👉 Multiplica el <b>numerador</b> por el mismo número que multiplicaste "
             f"el denominador para llegar a {m}. "
-            + _question(f"¿Qué numeradores obtienes? (responde: {A} y {C})")
+            + _question("¿Qué numeradores obtienes?")
         )
     
     if err == 2:
@@ -138,17 +139,19 @@ def _frac_equiv_hint(context: str, err: int, cycle: str) -> str:
     
     if err == 3:
         return (
-            f"💡 Así queda:\n"
-            f"{a}/{b} → ({a}×{kb})/({b}×{kb}) = <b>{A}/{m}</b>\n"
-            f"{c}/{d} → ({c}×{kd})/({d}×{kd}) = <b>{C}/{m}</b>\n"
+            f"💡 Recuerda la regla:\n"
+            f"Para {a}/{b}: divide {m} entre {b}, eso te da <b>{kb}</b>. "
+            f"Multiplica el numerador {a} por <b>{kb}</b>.\n"
+            f"Para {c}/{d}: divide {m} entre {d}, eso te da <b>{kd}</b>. "
+            f"Multiplica el numerador {c} por <b>{kd}</b>.\n"
             + _question("¿Qué numeradores obtienes?")
         )
     
     if err >= 4:
         return (
-            f"✅ Perfecto. Fracciones equivalentes:\n"
-            f"<b>{A}/{m}</b> y <b>{C}/{m}</b>\n"
-            f"(Numeradores nuevos: <b>{A} y {C}</b>)"
+            f"✅ Perfecto. Los nuevos numeradores son:\n"
+            f"<b>{A} y {C}</b>\n"
+            f"(Fracciones equivalentes: <b>{A}/{m}</b> y <b>{C}/{m}</b>)"
         )
     
     return "Multiplica cada numerador por el factor correspondiente."
@@ -168,28 +171,31 @@ def _frac_operacion_hint(context: str, err: int, cycle: str) -> str:
     if err == 1:
         return (
             f"👉 Ya tienen denominador común ({m}). "
-            f"Opera <b>solo los numeradores</b>: {a2} {op} {c2}. "
-            + _question("¿Qué obtienes?")
+            f"Opera <b>solo los numeradores</b>. "
+            + _question(f"¿Cuánto es {a2} {op} {c2}?")
         )
     
     if err == 2:
         return (
             f"🧮 El denominador queda igual (<b>{m}</b>). "
-            f"Calcula: {a2} {op} {c2}. "
-            + _question("¿Cuál es el numerador resultante?")
+            f"Solo tienes que {'sumar' if op == '+' else 'restar'} los numeradores. "
+            + _question(f"Calcula: {a2} {op} {c2}")
         )
     
     if err == 3:
         return (
-            f"💡 Operación paso a paso:\n"
-            f"{a2} {op} {c2} = <b>{num}</b>\n"
-            f"Resultado parcial: <b>{num}/{m}</b> (sin simplificar todavía)."
+            f"💡 Hazlo paso a paso:\n"
+            f"Numerador 1: {a2}\n"
+            f"Numerador 2: {c2}\n"
+            f"Operación: {a2} {op} {c2}\n"
+            + _question("¿Qué resultado obtienes?")
         )
     
     if err >= 4:
         return (
             f"✅ Resultado de la operación:\n"
-            f"{a}/{b} {op} {c}/{d} = <b>{num}/{m}</b> (sin simplificar)."
+            f"{a2} {op} {c2} = <b>{num}</b>\n"
+            f"Fracción resultante: <b>{num}/{m}</b> (sin simplificar)."
         )
     
     return "Opera solo los numeradores, el denominador no cambia."
@@ -232,25 +238,26 @@ def _frac_simplificar_hint(context: str, err: int, cycle: str) -> str:
     
     if err == 2:
         return (
-            f"🧮 Divide el numerador y el denominador por ese número común. "
-            f"Por ejemplo, si usas <b>{g}</b>: {n}÷{g} y {den}÷{g}. "
-            + _question("¿Qué fracción obtienes después de dividir?")
+            f"🧮 Piensa: ¿qué número divide exactamente a {n} y también a {den}? "
+            "Prueba con 2, 3, 5, 7... "
+            + _question("¿Cuál encuentras?")
             + marker
         )
     
     if err == 3:
         return (
-            f"💡 Vamos juntos:\n"
-            f"{n} ÷ {g} = {n // g}\n"
-            f"{den} ÷ {g} = {den // g}\n"
-            + _question("¿Cuál es la fracción simplificada?")
+            f"💡 Busca el máximo común divisor (M.C.D.) de {n} y {den}. "
+            f"Una pista: prueba dividir ambos por <b>{g}</b>. "
+            + _question("¿Qué fracción obtienes después de dividir?")
             + marker
         )
     
     if err >= 4:
         return (
-            f"✅ Muy bien. La fracción simplificada es:\n"
-            f"{n}/{den} ÷ {g}/{g} = <b>{n // g}/{den // g}</b>"
+            f"✅ La fracción simplificada es:\n"
+            f"{n} ÷ {g} = {n // g}\n"
+            f"{den} ÷ {g} = {den // g}\n"
+            f"Respuesta: <b>{n // g}/{den // g}</b>"
         )
     
     return "Divide numerador y denominador por el MCD."

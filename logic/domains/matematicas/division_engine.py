@@ -1,10 +1,35 @@
 # -*- coding: utf-8 -*-
+"""
+division_engine.py
+Motor de división paso a paso para Tutorín
+✅ VERSIÓN CORREGIDA: Las pistas se manejan en solve.py, no aquí
+"""
 import re
 from typing import List, Dict, Tuple
 
-# ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# SISTEMA DE DETECCIÓN DE AYUDA (mantener para compatibilidad)
+# ═══════════════════════════════════════════════════════════════
+
+HELP_KEYWORDS = [
+    "no se", "no sé", "nose", "nosé", "no lo se", "no lo sé",
+    "no entiendo", "no comprendo", "ayuda", "ayudame", "ayúdame",
+    "pista", "dame una pista", "necesito ayuda"
+]
+
+def _is_asking_for_help(user_answer: str) -> bool:
+    """Detecta si el usuario está pidiendo ayuda"""
+    if not user_answer:
+        return False
+    answer_clean = user_answer.lower().strip()
+    for keyword in HELP_KEYWORDS:
+        if keyword in answer_clean:
+            return True
+    return answer_clean in ["?", "??", "???", "...", "..", "."]
+
+# ─────────────────────────────────────────────────────────────
 # Parseo y helpers
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 def _parse_div(q: str):
     """Acepta '3457 / 3', '3457:3' o '3457 ÷ 3'."""
     q2 = q.replace("÷", "/").replace(":", "/")
@@ -65,9 +90,9 @@ def _compute_steps(dividend: int, divisor: int) -> Tuple[List[Dict], int, int, i
     remainder_final = steps[-1]["remainder"]
     return steps, quotient_full, remainder_final, first_k
 
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 # Render: DIVIDENDO a la IZQUIERDA (4578 | 2) y COCIENTE DEBAJO del divisor
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 def _render_pre_left_dividend(dividend: int,
                               divisor: int,
                               steps: List[Dict],
@@ -115,10 +140,14 @@ def _render_pre_left_dividend(dividend: int,
         off_rem = end_idx - (len(rem) - 1)
         add_left(" " * off_prod + prod)
         add_left(" " * off_prod + "-" * len(prod))
-        add_left(" " * off_rem + rem)
+        # Si hay next_digit, mostrar solo el new_group (no el resto)
+        # Si no hay next_digit, mostrar el resto
         if "next_digit" in steps[j]:
-            arrow_col = end_idx + 1
-            add_left(" " * arrow_col + "↓" + str(steps[j]["next_digit"]))
+            new_grp = str(steps[j]["new_group"])
+            off_new = end_idx + 1 - (len(new_grp) - 1)
+            add_left(" " * off_new + new_grp)
+        else:
+            add_left(" " * off_rem + rem)
     # 4) Bloque actual (NO mostrar producto si aún estamos eligiendo la cifra del cociente)
     if block < len(steps):
         end_idx = first_k - 1 + block
@@ -130,25 +159,37 @@ def _render_pre_left_dividend(dividend: int,
             add_left(" " * off_prod + prod)
             add_left(" " * off_prod + "-" * len(prod))
         if sub >= 2:
+            # Mostrar el resto solo después de responder la resta
             off_rem = end_idx - (len(rem) - 1)
             add_left(" " * off_rem + rem)
+            # Mostrar la flecha solo en el paso de bajar
             if "next_digit" in steps[block]:
                 arrow_col = end_idx + 1
                 add_left(" " * arrow_col + "↓" + str(steps[block]["next_digit"]))
     return "<pre style='font-family:monospace;line-height:1.25;margin:6px 0 0 0'>" + "\n".join(rows) + "</pre>"
 
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 # Motor por pasos
-# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 def handle_div_step(question: str, step_now: int, last_answer: str, error_count: int):
+    """
+    Motor principal de división paso a paso.
+    ✅ CORREGIDO: Ya NO agrega pistas automáticamente (las maneja solve.py)
+    """
     parsed = _parse_div(question)
     if not parsed:
         return None
+    
     dividend, divisor = parsed
+    
+    # ✅ MANTENER detección de ayuda (para compatibilidad)
+    asking_for_help = _is_asking_for_help(last_answer)
+    
     steps, q_full, r_final, first_k = _compute_steps(dividend, divisor)
     # subpasos por bloque: 3 (cifra, resta, bajar) excepto el último que es 2 (no hay bajar)
     subcounts = [3] * (len(steps) - 1) + [2]
-    # Paso 0: elegir primer grupo — TEXTO MEJORADO
+    
+    # Paso 0: elegir primer grupo
     if step_now == 0:
         pre = _render_pre_left_dividend(dividend, divisor, steps, first_k, block=0, sub=0, show_full_quotient=False)
         msg = (
@@ -158,6 +199,9 @@ def handle_div_step(question: str, step_now: int, last_answer: str, error_count:
             f"En este caso: dividendo = <b>{dividend}</b>, divisor = <b>{divisor}</b>. "
             "¿Con qué <b>número empezamos</b>? Escribe solo ese número."
         )
+        
+        # 🔥 ELIMINADO: Ya no agregamos pistas aquí
+        
         return {
             "status": "ask",
             "message": msg,
@@ -166,32 +210,43 @@ def handle_div_step(question: str, step_now: int, last_answer: str, error_count:
             "hint_type": "div_grupo",
             "next_step": step_now + 1
         }
+    
     # Mapear step_now → (block, sub)
     s = step_now - 1
     block = 0
     while block < len(subcounts) and s >= subcounts[block]:
         s -= subcounts[block]
         block += 1
+    
     # Fin (tras el último resto): tablero final con cociente completo DEBAJO del divisor
     if block >= len(steps):
         pre = _render_pre_left_dividend(dividend, divisor, steps, first_k, block=len(steps)-1, sub=2, show_full_quotient=True)
+        msg = f"{pre}✅ ¡Buen trabajo! Has completado todos los pasos de la división."
+        
+        # 🔥 ELIMINADO: Ya no agregamos pistas aquí
+        
         return {
             "status": "done",
-            "message": f"{pre}✅ ¡Buen trabajo! Has completado todos los pasos de la división.",
+            "message": msg,
             "expected_answer": "ok",
             "topic": "division",
-            "hint_type": "div_resultado",  # ✅ CORREGIDO: ya no es "general"
+            "hint_type": "div_resultado",
             "next_step": step_now + 1
         }
+    
     sub = s  # 0: cifra del cociente, 1: resta, 2: bajar
     show_full = (block == len(steps) - 1 and sub >= 1)
     pre = _render_pre_left_dividend(dividend, divisor, steps, first_k, block, sub, show_full_quotient=show_full)
+    
     if sub == 0:  # elegir cifra del cociente
         msg = (
             f"{pre}"
             f"👉 ¿Cuántas veces cabe <b>{divisor}</b> en <b>{steps[block]['group']}</b> sin pasarte? "
             "Escribe solo la <b>cifra del cociente</b>."
         )
+        
+        # 🔥 ELIMINADO: Ya no agregamos pistas aquí
+        
         return {
             "status": "ask",
             "message": msg,
@@ -200,12 +255,16 @@ def handle_div_step(question: str, step_now: int, last_answer: str, error_count:
             "hint_type": "div_qdigit",
             "next_step": step_now + 1
         }
+    
     if sub == 1:  # resta
         msg = (
             f"{pre}"
             f"Ahora resta: <b>{steps[block]['group']}</b> − <b>{divisor}×{steps[block]['qdigit']}</b>. "
             "👉 Escribe solo el <b>resto</b>."
         )
+        
+        # 🔥 ELIMINADO: Ya no agregamos pistas aquí
+        
         return {
             "status": "ask",
             "message": msg,
@@ -214,12 +273,16 @@ def handle_div_step(question: str, step_now: int, last_answer: str, error_count:
             "hint_type": "div_resta",
             "next_step": step_now + 1
         }
+    
     if sub == 2 and "next_digit" in steps[block]:  # bajar cifra
         msg = (
             f"{pre}"
             f"Baja la siguiente cifra: <b>{steps[block]['next_digit']}</b>. "
             "👉 ¿Cuál es el <b>nuevo número</b> que queda?"
         )
+        
+        # 🔥 ELIMINADO: Ya no agregamos pistas aquí
+        
         return {
             "status": "ask",
             "message": msg,
@@ -228,10 +291,15 @@ def handle_div_step(question: str, step_now: int, last_answer: str, error_count:
             "hint_type": "div_bajar",
             "next_step": step_now + 1
         }
+    
     # Fallback
+    msg = f"{pre}Sigamos con la división."
+    
+    # 🔥 ELIMINADO: Ya no agregamos pistas aquí
+    
     return {
         "status": "ask",
-        "message": f"{pre}Sigamos con la división.",
+        "message": msg,
         "topic": "division",
         "hint_type": "div_resultado",
         "next_step": step_now + 1
@@ -239,4 +307,5 @@ def handle_div_step(question: str, step_now: int, last_answer: str, error_count:
 
 # ✅ ALIAS PARA COMPATIBILIDAD
 def handle_step(question: str, step_now: int, last_answer: str, error_count: int, cycle: str = "c2"):
+    """Alias para compatibilidad con otros motores"""
     return handle_div_step(question, step_now, last_answer, error_count)

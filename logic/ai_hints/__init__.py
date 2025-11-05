@@ -15,7 +15,7 @@ from .hints_geometry import get_hint as get_geometry_hint
 from .hints_measures import get_hint as get_measures_hint
 from .hints_percentages import get_hint as get_percentages_hint
 from .hints_statistics import get_hint as get_statistics_hint
-from .hints_problems import get_hint as get_problems_hint
+
 
 # Importar el router principal
 from .ai_router import generate_hint_with_ai
