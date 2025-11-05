@@ -141,6 +141,16 @@
       "vocab_sinonimo",
       "vocab_antonimo",
       "vocab_definicion"
+    ],
+    "lectura": [
+      "read_intro",
+      "read_main_idea",
+      "read_detail",
+      "read_vocabulary",
+      "read_inference",
+      "read_comprehension",
+      "read_complete",
+      "read_error"
     ]
   },
   "ciencias": {

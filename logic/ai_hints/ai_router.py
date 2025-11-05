@@ -78,6 +78,11 @@ try:
 except ImportError:
     get_statistics_hint = None
 
+try:
+    from .hints_reading import get_hint as get_reading_hint
+except ImportError:
+    get_reading_hint = None
+
 # === IA opcional ===
 try:
     from openai import OpenAI
@@ -232,6 +237,12 @@ def generate_hint_with_ai(
             hint = get_statistics_hint(step, e, ctx, answer)
             _validate_hint_type("estadistica", step)
             return hint
+
+    # --- Lectura / Reading --- ✅ NUEVO: Soporte para comprensión lectora
+    if t in ("lectura", "reading", "comprension", "comprehension") and get_reading_hint:
+        hint = get_reading_hint(step, e, ctx, answer)
+        _validate_hint_type("lectura", step)
+        return hint
 
     # --- Carga dinámica genérica ---
     try:
