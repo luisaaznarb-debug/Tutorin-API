@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from routes.analyze_prompt import router as analyze_router
 from routes.solve import router as solve_router
 from routes.analyze_image import router as image_router  # ✅ LÍNEA NUEVA
+from routes.reading_setup import router as reading_router  # ✅ Sistema de lectura
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -48,13 +49,14 @@ def create_app() -> FastAPI:
     app.include_router(analyze_router, prefix="/analyze", tags=["Analyze"])
     app.include_router(solve_router, prefix="/solve", tags=["Solve"])
     app.include_router(image_router, prefix="/analyze", tags=["Image Analysis"])  # ✅ LÍNEA NUEVA
+    app.include_router(reading_router, prefix="/reading", tags=["Reading"])  # ✅ Comprensión lectora
 
     @app.get("/")
     def root():
         return {
             "message": "👋 Hola, soy Tutorín API.",
             "status": "online",
-            "routes": ["/analyze/text", "/analyze/image", "/solve"]  # ✅ ACTUALIZADO
+            "routes": ["/analyze/text", "/analyze/image", "/solve", "/reading"]  # ✅ ACTUALIZADO
         }
 
     return app
