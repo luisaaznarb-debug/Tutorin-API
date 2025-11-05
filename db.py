@@ -171,3 +171,81 @@ def reset_all() -> None:
         cur.execute("DELETE FROM progress")
         cur.execute("DELETE FROM history")
         logger.warning("⚠️ Base de datos completamente reseteada")
+
+
+# -------------------------------------------------------
+# FUNCIONES PARA EJERCICIOS DE LECTURA
+# -------------------------------------------------------
+
+def save_reading_exercise(exercise_id: str, exercise: Dict[str, Any]) -> None:
+    """
+    Guarda un ejercicio de lectura en la base de datos.
+
+    Args:
+        exercise_id: ID único del ejercicio
+        exercise: Diccionario con el ejercicio (formato reading_engine)
+    """
+    with _conn() as con:
+        cur = con.cursor()
+
+        # Crear tabla si no existe
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS reading_exercises (
+                exercise_id TEXT PRIMARY KEY,
+                exercise_data TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # Convertir exercise a JSON
+        import json
+        exercise_json = json.dumps(exercise, ensure_ascii=False)
+
+        # Insertar o reemplazar
+        cur.execute(
+            "INSERT OR REPLACE INTO reading_exercises(exercise_id, exercise_data) VALUES (?,?)",
+            (exercise_id, exercise_json)
+        )
+
+        logger.info(f"💾 Ejercicio de lectura guardado: {exercise_id}")
+
+
+def get_reading_exercise(exercise_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Obtiene un ejercicio de lectura de la base de datos.
+
+    Args:
+        exercise_id: ID del ejercicio
+
+    Returns:
+        Diccionario con el ejercicio o None si no existe
+    """
+    with _conn() as con:
+        cur = con.cursor()
+
+        # Crear tabla si no existe
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS reading_exercises (
+                exercise_id TEXT PRIMARY KEY,
+                exercise_data TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        cur.execute(
+            "SELECT exercise_data FROM reading_exercises WHERE exercise_id = ?",
+            (exercise_id,)
+        )
+
+        row = cur.fetchone()
+
+        if not row:
+            logger.warning(f"⚠️ Ejercicio no encontrado: {exercise_id}")
+            return None
+
+        # Parsear JSON
+        import json
+        exercise = json.loads(row[0])
+
+        logger.info(f"📖 Ejercicio de lectura recuperado: {exercise_id}")
+        return exercise
